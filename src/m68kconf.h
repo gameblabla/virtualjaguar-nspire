@@ -176,7 +176,7 @@ void M68KInstructionHook(void);
  * NOTE: not enabling inline functions will SEVERELY slow down emulation.
  */
 #ifndef INLINE
-#define INLINE static inline
+#define INLINE static __inline__
 #endif /* INLINE */
 
 

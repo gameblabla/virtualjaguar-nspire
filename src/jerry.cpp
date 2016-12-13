@@ -150,7 +150,7 @@
 
 //#define JERRY_DEBUG
 
-/*static*/ uint8 * jerry_ram_8;
+static uint8 * jerry_ram_8;
 
 //#define JERRY_CONFIG	0x4002						// ??? What's this ???
 
@@ -195,13 +195,11 @@ void jerry_i2s_exec(uint32 cycles)
 		jerry_i2s_interrupt_timer -= cycles;
 		if (jerry_i2s_interrupt_timer <= 0)
 		{
+			#ifdef DSP_EMU
 //This is probably wrong as well (i.e., need to check enable lines)... !!! FIX !!!
 			DSPSetIRQLine(DSPIRQ_SSI, ASSERT_LINE);
+			#endif
 			jerry_i2s_interrupt_timer += jerryI2SCycles;
-#ifdef JERRY_DEBUG
-			if (jerry_i2s_interrupt_timer < 0)
-				WriteLog("JERRY: Missed generating an interrupt (missed %u)!\n", (-jerry_i2s_interrupt_timer / jerryI2SCycles) + 1);
-#endif
 		}
 	}
 	else											// JERRY is slave to external word clock
@@ -214,13 +212,17 @@ void jerry_i2s_exec(uint32 cycles)
 		jerry_i2s_interrupt_timer -= cycles;
 		if (jerry_i2s_interrupt_timer <= 0)
 		{
+			#ifdef CDROM_EMU
 //This is probably wrong as well (i.e., need to check enable lines)... !!! FIX !!! [DONE]
 			if (ButchIsReadyToSend())//Not sure this is right spot to check...
 			{
 //	return GetWordFromButchSSI(offset, who);
 				SetSSIWordsXmittedFromButch();
+				#ifdef DSP_EMU
 				DSPSetIRQLine(DSPIRQ_SSI, ASSERT_LINE);
+				#endif
 			}
+			#endif
 			jerry_i2s_interrupt_timer += 602;
 		}
 	}
@@ -228,7 +230,7 @@ void jerry_i2s_exec(uint32 cycles)
 
 void jerry_reset_i2s_timer(void)
 {
-	//WriteLog("i2s: reseting\n");
+	////WriteLog("i2s: reseting\n");
 //This is really SCLK... !!! FIX !!!
 	jerry_i2s_interrupt_divide = 8;
 	jerry_i2s_interrupt_timer = -1;
@@ -243,7 +245,7 @@ void jerry_reset_timer_1(void)
 		jerry_timer_1_counter = (jerry_timer_1_prescaler + 1) * (jerry_timer_1_divider + 1);
 
 //	if (jerry_timer_1_counter)
-//		WriteLog("jerry: reseting timer 1 to 0x%.8x (%i)\n",jerry_timer_1_counter,jerry_timer_1_counter);
+//		//WriteLog("jerry: reseting timer 1 to 0x%.8x (%i)\n",jerry_timer_1_counter,jerry_timer_1_counter);
 }
 
 void jerry_reset_timer_2(void)
@@ -257,7 +259,7 @@ void jerry_reset_timer_2(void)
 		jerry_timer_2_counter = (jerry_timer_2_prescaler + 1) * (jerry_timer_2_divider + 1);
 
 //	if (jerry_timer_2_counter)
-//		WriteLog("jerry: reseting timer 2 to 0x%.8x (%i)\n",jerry_timer_2_counter,jerry_timer_2_counter);
+//		//WriteLog("jerry: reseting timer 2 to 0x%.8x (%i)\n",jerry_timer_2_counter,jerry_timer_2_counter);
 }
 
 void JERRYExecPIT(uint32 cycles)
@@ -269,7 +271,9 @@ void JERRYExecPIT(uint32 cycles)
 	if (jerry_timer_1_counter <= 0)
 	{
 //Also, it can generate a CPU interrupt as well... !!! FIX !!! or does it? Maybe it goes Timer->GPU->CPU?
+		#ifdef DSP_EMU
 		DSPSetIRQLine(DSPIRQ_TIMER0, ASSERT_LINE);	// This does the 'IRQ enabled' checking...
+		#endif
 //		jerry_reset_timer_1();
 		jerry_timer_1_counter += (jerry_timer_1_prescaler + 1) * (jerry_timer_1_divider + 1);
 	}
@@ -281,7 +285,9 @@ void JERRYExecPIT(uint32 cycles)
 	if (jerry_timer_2_counter <= 0)
 	{
 //Also, it can generate a CPU interrupt as well... !!! FIX !!! or does it? Maybe it goes Timer->GPU->CPU?
+		#ifdef DSP_EMU
 		DSPSetIRQLine(DSPIRQ_TIMER1, ASSERT_LINE);	// This does the 'IRQ enabled' checking...
+		#endif
 //		jerry_reset_timer_2();
 		jerry_timer_2_counter += (jerry_timer_2_prescaler + 1) * (jerry_timer_2_divider + 1);
 	}
@@ -319,7 +325,7 @@ void jerry_reset(void)
 
 void jerry_done(void)
 {
-	WriteLog("JERRY: M68K Interrupt control ($F10020) = %04X\n", GET16(jerry_ram_8, 0x20));
+	//WriteLog("JERRY: M68K Interrupt control ($F10020) = %04X\n", GET16(jerry_ram_8, 0x20));
 	memory_free(jerry_ram_8);
 	clock_done();
 	anajoy_done();
@@ -346,8 +352,9 @@ void JERRYSetPendingIRQ(int irq)
 uint8 JERRYReadByte(uint32 offset, uint32 who/*=UNKNOWN*/)
 {
 #ifdef JERRY_DEBUG
-	WriteLog("JERRY: Reading byte at %06X\n", offset);
+	//WriteLog("JERRY: Reading byte at %06X\n", offset);
 #endif
+	#ifdef DSP_EMU
 	if ((offset >= DSP_CONTROL_RAM_BASE) && (offset < DSP_CONTROL_RAM_BASE+0x20))
 		return DSPReadByte(offset, who);
 	else if ((offset >= DSP_WORK_RAM_BASE) && (offset < DSP_WORK_RAM_BASE+0x2000))
@@ -355,6 +362,10 @@ uint8 JERRYReadByte(uint32 offset, uint32 who/*=UNKNOWN*/)
 	// LRXD/RRXD/SSTAT $F1A148/4C/50 (really 16-bit registers...)
 	else if (offset >= 0xF1A148 && offset <= 0xF1A153)
 		return DACReadByte(offset, who);
+	#else
+	if (offset >= 0xF1A148 && offset <= 0xF1A153)
+		return DACReadByte(offset, who);
+	#endif
 //	F10036          R     xxxxxxxx xxxxxxxx   JPIT1 - timer 1 pre-scaler
 //	F10038          R     xxxxxxxx xxxxxxxx   JPIT2 - timer 1 divider
 //	F1003A          R     xxxxxxxx xxxxxxxx   JPIT3 - timer 2 pre-scaler
@@ -417,9 +428,10 @@ uint8 JERRYReadByte(uint32 offset, uint32 who/*=UNKNOWN*/)
 uint16 JERRYReadWord(uint32 offset, uint32 who/*=UNKNOWN*/)
 {
 #ifdef JERRY_DEBUG
-	WriteLog("JERRY: Reading word at %06X\n", offset);
+	//WriteLog("JERRY: Reading word at %06X\n", offset);
 #endif
 
+	#ifdef DSP_EMU
 	if ((offset >= DSP_CONTROL_RAM_BASE) && (offset < DSP_CONTROL_RAM_BASE+0x20))
 		return DSPReadWord(offset, who);
 	else if (offset >= DSP_WORK_RAM_BASE && offset <= DSP_WORK_RAM_BASE + 0x1FFF)
@@ -427,6 +439,11 @@ uint16 JERRYReadWord(uint32 offset, uint32 who/*=UNKNOWN*/)
 	// LRXD/RRXD/SSTAT $F1A148/4C/50 (really 16-bit registers...)
 	else if (offset >= 0xF1A148 && offset <= 0xF1A153)
 		return DACReadWord(offset, who);
+	#else
+	if (offset >= 0xF1A148 && offset <= 0xF1A153)
+		return DACReadWord(offset, who);
+	#endif
+
 //	F10036          R     xxxxxxxx xxxxxxxx   JPIT1 - timer 1 pre-scaler
 //	F10038          R     xxxxxxxx xxxxxxxx   JPIT2 - timer 1 divider
 //	F1003A          R     xxxxxxxx xxxxxxxx   JPIT3 - timer 2 pre-scaler
@@ -474,7 +491,7 @@ uint16 JERRYReadWord(uint32 offset, uint32 who/*=UNKNOWN*/)
 		return eeprom_word_read(offset);
 
 /*if (offset >= 0xF1D000)
-	WriteLog("JERRY: Reading word at %08X [%04X]...\n", offset, ((uint16)jerry_ram_8[(offset+0)&0xFFFF] << 8) | jerry_ram_8[(offset+1)&0xFFFF]);//*/
+	//WriteLog("JERRY: Reading word at %08X [%04X]...\n", offset, ((uint16)jerry_ram_8[(offset+0)&0xFFFF] << 8) | jerry_ram_8[(offset+1)&0xFFFF]);//*/
 
 	offset &= 0xFFFF;				// Prevent crashing...!
 	return ((uint16)jerry_ram_8[offset+0] << 8) | jerry_ram_8[offset+1];
@@ -486,8 +503,10 @@ uint16 JERRYReadWord(uint32 offset, uint32 who/*=UNKNOWN*/)
 void JERRYWriteByte(uint32 offset, uint8 data, uint32 who/*=UNKNOWN*/)
 {
 #ifdef JERRY_DEBUG
-	WriteLog("jerry: writing byte %.2x at 0x%.6x\n",data,offset);
+	//WriteLog("jerry: writing byte %.2x at 0x%.6x\n",data,offset);
 #endif
+
+	#ifdef DSP_EMU
 	if ((offset >= DSP_CONTROL_RAM_BASE) && (offset < DSP_CONTROL_RAM_BASE+0x20))
 	{
 		DSPWriteByte(offset, data, who);
@@ -501,7 +520,7 @@ void JERRYWriteByte(uint32 offset, uint8 data, uint32 who/*=UNKNOWN*/)
 	// SCLK ($F1A150--8 bits wide)
 	else if ((offset >= 0xF1A152) && (offset <= 0xF1A153))
 	{
-//		WriteLog("JERRY: Writing %02X to SCLK...\n", data);
+//		//WriteLog("JERRY: Writing %02X to SCLK...\n", data);
 		if ((offset & 0x03) == 2)
 			jerry_i2s_interrupt_divide = (jerry_i2s_interrupt_divide & 0x00FF) | ((uint32)data << 8);
 		else
@@ -560,10 +579,83 @@ void JERRYWriteByte(uint32 offset, uint8 data, uint32 who/*=UNKNOWN*/)
 		clock_byte_write(offset, data);
 		return;
 	}
-	// JERRY -> 68K interrupt enables/latches (need to be handled!)
-	else if (offset >= 0xF10020 && offset <= 0xF10023)
+	else if ((offset >= 0xF17C00) && (offset <= 0xF17C01))
 	{
-WriteLog("JERRY: (68K int en/lat - Unhandled!) Tried to write $%02X to $%08X!\n", data, offset);
+		anajoy_byte_write(offset, data);
+		return;
+	}
+	else if ((offset >= 0xF14000) && (offset <= 0xF14003))
+	{
+		joystick_byte_write(offset, data);
+		eeprom_byte_write(offset, data);
+		return;
+	}
+	else if ((offset >= 0xF14000) && (offset <= 0xF1A0FF))
+	{
+		eeprom_byte_write(offset, data);
+		return;
+	}
+	#else
+	if ((offset >= 0xF1A152) && (offset <= 0xF1A153))
+	{
+//		//WriteLog("JERRY: Writing %02X to SCLK...\n", data);
+		if ((offset & 0x03) == 2)
+			jerry_i2s_interrupt_divide = (jerry_i2s_interrupt_divide & 0x00FF) | ((uint32)data << 8);
+		else
+			jerry_i2s_interrupt_divide = (jerry_i2s_interrupt_divide & 0xFF00) | (uint32)data;
+
+		jerry_i2s_interrupt_timer = -1;
+		jerry_i2s_exec(0);
+//		return;
+	}
+	// LTXD/RTXD/SCLK/SMODE $F1A148/4C/50/54 (really 16-bit registers...)
+	else if (offset >= 0xF1A148 && offset <= 0xF1A157)
+	{ 
+		DACWriteByte(offset, data, who);
+		return; 
+	}
+	else if (offset >= 0xF10000 && offset <= 0xF10007)
+	{
+		switch (offset & 0x07)
+		{
+		case 0:
+			jerry_timer_1_prescaler = (jerry_timer_1_prescaler & 0x00FF) | (data << 8);
+			jerry_reset_timer_1();
+			break;
+		case 1:
+			jerry_timer_1_prescaler = (jerry_timer_1_prescaler & 0xFF00) | data;
+			jerry_reset_timer_1();
+			break;
+		case 2:
+			jerry_timer_1_divider = (jerry_timer_1_divider & 0x00FF) | (data << 8);
+			jerry_reset_timer_1();
+			break;
+		case 3:
+			jerry_timer_1_divider = (jerry_timer_1_divider & 0xFF00) | data;
+			jerry_reset_timer_1();
+			break;
+		case 4:
+			jerry_timer_2_prescaler = (jerry_timer_2_prescaler & 0x00FF) | (data << 8);
+			jerry_reset_timer_2();
+			break;
+		case 5:
+			jerry_timer_2_prescaler = (jerry_timer_2_prescaler & 0xFF00) | data;
+			jerry_reset_timer_2();
+			break;
+		case 6:
+			jerry_timer_2_divider = (jerry_timer_2_divider & 0x00FF) | (data << 8);
+			jerry_reset_timer_2();
+			break;
+		case 7:
+			jerry_timer_2_divider = (jerry_timer_2_divider & 0xFF00) | data;
+			jerry_reset_timer_2();
+		}
+		return;
+	}
+	else if ((offset >= 0xF10010) && (offset <= 0xF10015))
+	{
+		clock_byte_write(offset, data);
+		return;
 	}
 	else if ((offset >= 0xF17C00) && (offset <= 0xF17C01))
 	{
@@ -581,6 +673,8 @@ WriteLog("JERRY: (68K int en/lat - Unhandled!) Tried to write $%02X to $%08X!\n"
 		eeprom_byte_write(offset, data);
 		return;
 	}
+	#endif
+
 
 //Need to protect write attempts to Wavetable ROM (F1D000-FFF)
 	if (offset >= 0xF1D000 && offset <= 0xF1DFFF)
@@ -595,9 +689,10 @@ WriteLog("JERRY: (68K int en/lat - Unhandled!) Tried to write $%02X to $%08X!\n"
 void JERRYWriteWord(uint32 offset, uint16 data, uint32 who/*=UNKNOWN*/)
 {
 #ifdef JERRY_DEBUG
-	WriteLog( "JERRY: Writing word %04X at %06X\n", data, offset);
+	//WriteLog( "JERRY: Writing word %04X at %06X\n", data, offset);
 #endif
 
+#ifdef DSP_EMU
 	if ((offset >= DSP_CONTROL_RAM_BASE) && (offset < DSP_CONTROL_RAM_BASE+0x20))
 	{
 		DSPWriteWord(offset, data, who);
@@ -610,8 +705,6 @@ void JERRYWriteWord(uint32 offset, uint16 data, uint32 who/*=UNKNOWN*/)
 	}
 	else if (offset == 0xF1A152)					// Bottom half of SCLK ($F1A150)
 	{
-		WriteLog("JERRY: Writing %04X to SCLK (by %s)...\n", data, whoName[who]);
-//This should *only* be enabled when SMODE has its INTERNAL bit set! !!! FIX !!!
 		jerry_i2s_interrupt_divide = (uint8)data;
 		jerry_i2s_interrupt_timer = -1;
 		jerry_i2s_exec(0);
@@ -653,10 +746,66 @@ void JERRYWriteWord(uint32 offset, uint16 data, uint32 who/*=UNKNOWN*/)
 		clock_word_write(offset, data);
 		return;
 	}
-	// JERRY -> 68K interrupt enables/latches (need to be handled!)
-	else if (offset >= 0xF10020 && offset <= 0xF10022)
+	else if (offset >= 0xF17C00 && offset < 0xF17C02)
 	{
-WriteLog("JERRY: (68K int en/lat - Unhandled!) Tried to write $%04X to $%08X!\n", data, offset);
+//I think this was removed from the Jaguar. If so, then we don't need this...!
+		anajoy_word_write(offset, data);
+		return;
+	}
+	else if (offset >= 0xF14000 && offset < 0xF14003)
+	{
+		joystick_word_write(offset, data);
+		eeprom_word_write(offset, data);
+		return;
+	}
+	else if (offset >= 0xF14000 && offset <= 0xF1A0FF)
+	{
+		eeprom_word_write(offset, data);
+		return;
+	}
+#else
+	if (offset == 0xF1A152)					// Bottom half of SCLK ($F1A150)
+	{
+		jerry_i2s_interrupt_divide = (uint8)data;
+		jerry_i2s_interrupt_timer = -1;
+		jerry_i2s_exec(0);
+
+		DACWriteWord(offset, data, who);
+		return; 
+	}
+	// LTXD/RTXD/SCLK/SMODE $F1A148/4C/50/54 (really 16-bit registers...)
+	else if (offset >= 0xF1A148 && offset <= 0xF1A156)
+	{ 
+		DACWriteWord(offset, data, who);
+		return; 
+	}
+	else if (offset >= 0xF10000 && offset <= 0xF10007)
+	{
+		switch(offset & 0x07)
+		{
+		case 0:
+			jerry_timer_1_prescaler = data;
+			jerry_reset_timer_1();
+			break;
+		case 2:
+			jerry_timer_1_divider = data;
+			jerry_reset_timer_1();
+			break;
+		case 4:
+			jerry_timer_2_prescaler = data;
+			jerry_reset_timer_2();
+			break;
+		case 6:
+			jerry_timer_2_divider = data;
+			jerry_reset_timer_2();
+		}
+		// Need to handle (unaligned) cases???
+		return;
+	}
+	else if (offset >= 0xF10010 && offset < 0xF10016)
+	{
+		clock_word_write(offset, data);
+		return;
 	}
 	else if (offset >= 0xF17C00 && offset < 0xF17C02)
 	{
@@ -675,6 +824,7 @@ WriteLog("JERRY: (68K int en/lat - Unhandled!) Tried to write $%04X to $%08X!\n"
 		eeprom_word_write(offset, data);
 		return;
 	}
+#endif
 
 //Need to protect write attempts to Wavetable ROM (F1D000-FFF)
 	if (offset >= 0xF1D000 && offset <= 0xF1DFFF)

@@ -23,33 +23,24 @@ THECC = $(CC) $(CFLAGS) $(INCS)
 OBJS = \
 	obj/anajoy.o \
 	obj/blitter.o \
-	obj/cdrom.o \
-	obj/cdintf.o \
 	obj/clock.o \
 	obj/crc32.o \
 	obj/dac.o \
-	obj/dsp.o \
 	obj/eeprom.o \
 	obj/gpu.o \
 	obj/gui.o \
-	obj/jagdasm.o \
 	obj/jaguar.o \
 	obj/jerry.o \
 	obj/joystick.o \
-	obj/log.o \
 	obj/main.o \
 	obj/m68kcpu.o obj/m68kops.o obj/m68kopac.o obj/m68kopdm.o obj/m68kopnz.o \
-	obj/m68kdasm.o \
 	obj/memory.o \
 	obj/objectp.o \
 	obj/settings.o \
 	obj/tom.o \
 	obj/version.o \
 	obj/video.o \
-	obj/vj.o \
-	$(ICON)
-#	obj/cdbios.o 
-#	obj/cdi.o 
+	obj/vj.o
 
 all: obj $(TARGET)
 

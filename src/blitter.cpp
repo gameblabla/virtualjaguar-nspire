@@ -343,10 +343,43 @@ static int32_t a1_clip_x, a1_clip_y;
 //
 void blitter_generic(uint32_t cmd)
 {
+/*
+Blit! (0018FA70 <- 008DDC40) count: 2 x 13, A1/2_FLAGS: 00014218/00013C18 [cmd: 1401060C]
+ CMD -> src: SRCENX dst: DSTEN  misc:  a1ctl: UPDA1 UPDA2 mode:  ity: PATDSEL z-op:  op: LFU_CLEAR ctrl: BCOMPEN BKGWREN
+  A1 step values: -2 (X), 1 (Y)
+  A2 step values: -1 (X), 1 (Y) [mask (unused): 00000000 - FFFFFFFF/FFFFFFFF]
+  A1 -> pitch: 1 phrases, depth: 8bpp, z-off: 0, width: 320 (21), addctl: XADDPIX YADD0 XSIGNADD YSIGNADD
+  A2 -> pitch: 1 phrases, depth: 8bpp, z-off: 0, width: 192 (1E), addctl: XADDPIX YADD0 XSIGNADD YSIGNADD
+        A1 x/y: 100/12, A2 x/y: 106/0 Pattern: 000000F300000000
+*/
+//if (effect_start)
+//	specialLog = true;
+/*if (cmd == 0x1401060C && blit_start_log)
+	specialLog = true;//*/
+//Testing only!
+//uint32_t logGo = ((cmd == 0x01800E01 && REG(A1_BASE) == 0x898000) ? 1 : 0);
 	uint32_t srcdata, srczdata, dstdata, dstzdata, writedata, inhibit;
 	uint32_t bppSrc = (DSTA2 ? 1 << ((REG(A1_FLAGS) >> 3) & 0x07) : 1 << ((REG(A2_FLAGS) >> 3) & 0x07));
+/*
+if (specialLog)
+{
+	WriteLog("About to do n x m blit (BM width is ? pixels)...\n");
+	WriteLog("A1_STEP_X/Y = %08X/%08X, A2_STEP_X/Y = %08X/%08X\n", a1_step_x, a1_step_y, a2_step_x, a2_step_y);
+}*/
+/*	if (BCOMPEN)
+	{
+		if (DSTA2)
+			a1_xadd = 0;
+		else
+			a2_xadd = 0;
+	}//*/
+
 	while (outer_loop--)
 	{
+/*if (specialLog)
+{
+	WriteLog("  A1_X/Y = %08X/%08X, A2_X/Y = %08X/%08X\n", a1_x, a1_y, a2_x, a2_y);
+}*/
 		uint32_t a1_start = a1_x, a2_start = a2_x, bitPos = 0;
 
 		//Kludge for Hover Strike...
@@ -360,11 +393,17 @@ void blitter_generic(uint32_t cmd)
 
 		inner_loop = n_pixels;
 		while (inner_loop--)
-		{
+		{/*
+if (specialLog)
+{
+	WriteLog("    A1_X/Y = %08X/%08X, A2_X/Y = %08X/%08X\n", a1_x, a1_y, a2_x, a2_y);
+}*/
 			srcdata = srczdata = dstdata = dstzdata = writedata = inhibit = 0;
 
 			if (!DSTA2)							// Data movement: A1 <- A2
 			{
+				// load src data and Z
+//				if (SRCEN)
 				if (SRCEN || SRCENX)	// Not sure if this is correct... (seems to be...!)
 				{
 					srcdata = READ_PIXEL(a2, REG(A2_FLAGS));
@@ -400,6 +439,14 @@ void blitter_generic(uint32_t cmd)
 						dstzdata = READ_RDATA(DSTZ, a1, REG(A1_FLAGS), a1_phrase_mode);
 				}
 
+/*This wasn't working...				// a1 clipping
+				if (cmd & 0x00000040)
+				{
+					if (a1_x < 0 || a1_y < 0 || (a1_x >> 16) >= (REG(A1_CLIP) & 0x7FFF)
+						|| (a1_y >> 16) >= ((REG(A1_CLIP) >> 16) & 0x7FFF))
+						inhibit = 1;
+				}//*/
+
 				if (GOURZ)
 					srczdata = z_i[colour_index] >> 16;
 
@@ -408,6 +455,12 @@ void blitter_generic(uint32_t cmd)
 				if (Z_OP_EQU && srczdata == dstzdata)	inhibit = 1;
 				if (Z_OP_SUP && srczdata >  dstzdata)	inhibit = 1;
 
+				// apply data comparator
+// Note: DCOMPEN only works in 8/16 bpp modes! !!! FIX !!!
+// Does BCOMPEN only work in 1 bpp mode???
+//   No, but it always does a 1 bit expansion no matter what the BPP of the channel is set to. !!! FIX !!!
+//   This is bit tricky... We need to fix the XADD value so that it acts like a 1BPP value while inside
+//   an 8BPP space.
 				if (DCOMPEN | BCOMPEN)
 				{
 //Temp, for testing Hover Strike
@@ -416,11 +469,16 @@ void blitter_generic(uint32_t cmd)
 //to honor the BPP when calculating the start address (which it kinda does already). Second,
 //it has to step bit by bit when using BCOMPEN. How to do this???
 	if (BCOMPEN)
+//small problem with this approach: it's not accurate... We need a proper address to begin with
+//and *then* we can do the bit stepping from there the way it's *supposed* to be done... !!! FIX !!!
+//[DONE]
 	{
 		uint32_t pixShift = (~bitPos) & (bppSrc - 1);
 		srcdata = (srcdata >> pixShift) & 0x01;
 
 		bitPos++;
+//		if (bitPos % bppSrc == 0)
+//			a2_x += 0x00010000;
 	}
 /*
 Interesting (Hover Strike--large letter):
@@ -514,6 +572,10 @@ Blit! (000B8250 <- 0012C3A0) count: 16 x 1, A1/2_FLAGS: 00014420/00012000 [cmd: 
 //						if (dstdata != READ_RDATA(PATTERNDATA, a1, REG(A1_FLAGS), a1_phrase_mode))
 							inhibit = 1;
 					}
+
+// This is DEFINITELY WRONG
+//					if (a1_phrase_mode || a2_phrase_mode)
+//						inhibit = !inhibit;
 				}
 
 				if (CLIPA1)
@@ -525,6 +587,15 @@ Blit! (000B8250 <- 0012C3A0) count: 16 x 1, A1/2_FLAGS: 00014420/00012000 [cmd: 
 				// compute the write data and store
 				if (!inhibit)
 				{
+// Houston, we have a problem...
+// Look here, at PATDSEL and GOURD. If both are active (as they are on the BIOS intro), then there's
+// a conflict! E.g.:
+//Blit! (00100000 <- 000095D0) count: 3 x 1, A1/2_FLAGS: 00014220/00004020 [cmd: 00011008]
+// CMD -> src:  dst: DSTEN  misc:  a1ctl:  mode: GOURD  ity: PATDSEL z-op:  op: LFU_CLEAR ctrl:
+//  A1 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 320 (21), addctl: XADDPIX YADD0 XSIGNADD YSIGNADD
+//  A2 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 256 (20), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+//        A1 x/y: 90/171, A2 x/y: 808/0 Pattern: 776D770077007700
+
 					if (PATDSEL)
 					{
 						// use pattern data for write data
@@ -532,6 +603,33 @@ Blit! (000B8250 <- 0012C3A0) count: 16 x 1, A1/2_FLAGS: 00014420/00012000 [cmd: 
 					}
 					else if (ADDDSEL)
 					{
+/*if (blit_start_log)
+	WriteLog("BLIT: ADDDSEL srcdata: %08X\, dstdata: %08X, ", srcdata, dstdata);//*/
+
+						// intensity addition
+//Ok, this is wrong... Or is it? Yes, it's wrong! !!! FIX !!!
+/*						writedata = (srcdata & 0xFF) + (dstdata & 0xFF);
+						if (!(TOPBEN) && writedata > 0xFF)
+//							writedata = 0xFF;
+							writedata &= 0xFF;
+						writedata |= (srcdata & 0xF00) + (dstdata & 0xF00);
+						if (!(TOPNEN) && writedata > 0xFFF)
+//							writedata = 0xFFF;
+							writedata &= 0xFFF;
+						writedata |= (srcdata & 0xF000) + (dstdata & 0xF000);//*/
+//notneeded--writedata &= 0xFFFF;
+/*if (blit_start_log)
+	WriteLog("writedata: %08X\n", writedata);//*/
+/*
+Hover Strike ADDDSEL blit:
+
+Blit! (00098D90 <- 0081DDC0) count: 320 x 287, A1/2_FLAGS: 00004220/00004020 [cmd: 00020208]
+ CMD -> src:  dst: DSTEN  misc:  a1ctl: UPDA1  mode:  ity: ADDDSEL z-op:  op: LFU_CLEAR ctrl:
+  A1 step values: -320 (X), 1 (Y)
+  A1 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 320 (21), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+  A2 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 256 (20), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+        A1 x/y: 0/0, A2 x/y: 3288/0 Pattern: 0000000000000000 SRCDATA: 00FD00FD00FD00FD
+*/
 						writedata = (srcdata & 0xFF) + (dstdata & 0xFF);
 
 						if (!TOPBEN)
@@ -566,7 +664,11 @@ Blit! (000B8250 <- 0012C3A0) count: 16 x 1, A1/2_FLAGS: 00014420/00012000 [cmd: 
 						if (LFU_AN)  writedata |= srcdata  & ~dstdata;
 						if (LFU_A) 	 writedata |= srcdata  & dstdata;
 					}
-					
+
+//Although, this looks like it's OK... (even if it is shitty!)
+//According to JTRM, this is part of the four things the blitter does with the write data (the other
+//three being PATDSEL, ADDDSEL, and LFU (default). I'm not sure which gets precedence, this or PATDSEL
+//(see above blit example)...
 					if (GOURD)
 						writedata = ((gd_c[colour_index]) << 8) | (gd_i[colour_index] >> 16);
 
@@ -590,8 +692,17 @@ Blit! (000B8250 <- 0012C3A0) count: 16 x 1, A1/2_FLAGS: 00014420/00012000 [cmd: 
 					srczdata = dstzdata;
 				}
 
-				if (BKGWREN || !inhibit)
+//Tried 2nd below for Hover Strike: No dice.
+				if (/*a1_phrase_mode || */BKGWREN || !inhibit)
+//				if (/*a1_phrase_mode || BKGWREN ||*/ !inhibit)
 				{
+/*if (((REG(A1_FLAGS) >> 3) & 0x07) == 5)
+{
+	uint32_t offset = a1_addr+(PIXEL_OFFSET_32(a1)<<2);
+// (((((uint32_t)a##_y >> 16) * a##_width) + (((uint32_t)a##_x >> 16) & ~1)) * (1 + a##_pitch) + (((uint32_t)a##_x >> 16) & 1))
+	if ((offset >= 0x1FF020 && offset <= 0x1FF03F) || (offset >= 0x1FF820 && offset <= 0x1FF83F))
+		WriteLog("32bpp pixel write: A1 Phrase mode --> ");
+}//*/
 					// write to the destination
 					WRITE_PIXEL(a1, REG(A1_FLAGS), writedata);
 					if (DSTWRZ)
@@ -739,8 +850,14 @@ Blit! (000B8250 <- 0012C3A0) count: 16 x 1, A1/2_FLAGS: 00014420/00012000 [cmd: 
 					srczdata = dstzdata;
 				}
 
-				if (BKGWREN || !inhibit)
+				if (/*a2_phrase_mode || */BKGWREN || !inhibit)
 				{
+/*if (logGo)
+{
+	uint32_t offset = a2_addr+(PIXEL_OFFSET_16(a2)<<1);
+// (((((uint32_t)a##_y >> 16) * a##_width) + (((uint32_t)a##_x >> 16) & ~1)) * (1 + a##_pitch) + (((uint32_t)a##_x >> 16) & 1))
+	WriteLog("[%08X:%04X] ", offset, writedata);
+}//*/
 					// write to the destination
 					WRITE_PIXEL(a2, REG(A2_FLAGS), writedata);
 
@@ -749,8 +866,11 @@ Blit! (000B8250 <- 0012C3A0) count: 16 x 1, A1/2_FLAGS: 00014420/00012000 [cmd: 
 				}
 			}
 
+			// Update x and y (inner loop)
+//Now it does! But crappy, crappy, crappy! !!! FIX !!! [DONE]
+//This is less than ideal, but it works...
 			if (!BCOMPEN)
-			{
+			{//*/
 				a1_x += a1_xadd, a1_y += a1_yadd;
 				a2_x = (a2_x + a2_xadd) & a2_mask_x, a2_y = (a2_y + a2_yadd) & a2_mask_y;
 			}
@@ -777,25 +897,59 @@ Blit! (000B8250 <- 0012C3A0) count: 16 x 1, A1/2_FLAGS: 00014420/00012000 [cmd: 
 			if (GOURD || SRCSHADE)
 			{
 				gd_i[colour_index] += gd_ia;
-				if ((int32_t)gd_i[colour_index] < 0)
-					gd_i[colour_index] = 0;
-				if (gd_i[colour_index] > 0x00FFFFFF)
-					gd_i[colour_index] = 0x00FFFFFF;//*/
+//Hmm, this doesn't seem to do anything...
+//But it is correct according to the JTRM...!
+if ((int32_t)gd_i[colour_index] < 0)
+	gd_i[colour_index] = 0;
+if (gd_i[colour_index] > 0x00FFFFFF)
+	gd_i[colour_index] = 0x00FFFFFF;//*/
 
-								gd_c[colour_index] += gd_ca;
-				if ((int32_t)gd_c[colour_index] < 0)
-					gd_c[colour_index] = 0;
-				if (gd_c[colour_index] > 0x000000FF)
-					gd_c[colour_index] = 0x000000FF;
+				gd_c[colour_index] += gd_ca;
+if ((int32_t)gd_c[colour_index] < 0)
+	gd_c[colour_index] = 0;
+if (gd_c[colour_index] > 0x000000FF)
+	gd_c[colour_index] = 0x000000FF;//*/
 			}
 
 			if (GOURD || SRCSHADE || GOURZ)
 			{
 				if (a1_phrase_mode)
+//This screws things up WORSE (for the BIOS opening screen)
+//				if (a1_phrase_mode || a2_phrase_mode)
 					colour_index = (colour_index + 1) & 0x03;
 			}
 		}
 
+/*
+Here's the problem... The phrase mode code!
+Blit! (00100000 -> 00148000) count: 327 x 267, A1/2_FLAGS: 00004420/00004420 [cmd: 41802E01]
+ CMD -> src: SRCEN  dst:  misc:  a1ctl: UPDA1 UPDA2 mode: DSTA2 GOURZ ity:  z-op:  op: LFU_REPLACE ctrl: SRCSHADE
+  A1 step values: -327 (X), 1 (Y)
+  A2 step values: -327 (X), 1 (Y) [mask (unused): 00000000 - FFFFFFFF/FFFFFFFF]
+  A1 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 384 (22), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+  A2 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 384 (22), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+        A1 x/y: 28/58, A2 x/y: 28/58 Pattern: 00EA7BEA77EA77EA SRCDATA: 7BFF7BFF7BFF7BFF
+
+Below fixes it, but then borks:
+; O
+
+Blit! (00110000 <- 0010B2A8) count: 12 x 12, A1/2_FLAGS: 000042E2/00000020 [cmd: 09800609]
+ CMD -> src: SRCEN  dst: DSTEN  misc:  a1ctl: UPDA1 UPDA2 mode:  ity:  z-op:  op: LFU_REPLACE ctrl: DCOMPEN
+  A1 step values: -15 (X), 1 (Y)
+  A2 step values: -4 (X), 0 (Y) [mask (unused): 00000000 - FFFFFFFF/FFFFFFFF]
+  A1 -> pitch: 4 phrases, depth: 16bpp, z-off: 3, width: 320 (21), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+  A2 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 1 (00), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+        A1 x/y: 173/144, A2 x/y: 4052/0
+
+Lesse, with pre-add we'd have:
+
+     oooooooooooo
+00001111222233334444555566667777
+  ^  ^starts here...
+  |             ^ends here.
+  |rolls back to here. Hmm.
+
+*/
 //NOTE: The way to fix the CD BIOS is to uncomment below and comment the stuff after
 //      the phrase mode mucking around. But it fucks up everything else...
 //#define SCREWY_CD_DEPENDENT
@@ -806,6 +960,25 @@ Blit! (000B8250 <- 0012C3A0) count: 16 x 1, A1/2_FLAGS: 00014420/00012000 [cmd: 
 		a2_y += a2_step_y;//*/
 #endif
 
+		//New: Phrase mode taken into account! :-p
+/*		if (a1_phrase_mode)			// v1
+		{
+			// Bump the pointer to the next phrase boundary
+			// Even though it works, this is crappy... Clean it up!
+			uint32_t size = 64 / a1_psize;
+
+			// Crappy kludge... ('aligning' source to destination)
+			if (a2_phrase_mode && DSTA2)
+			{
+				uint32_t extra = (a2_start >> 16) % size;
+				a1_x += extra << 16;
+			}
+
+			uint32_t newx = (a1_x >> 16) / size;
+			uint32_t newxrem = (a1_x >> 16) % size;
+			a1_x &= 0x0000FFFF;
+			a1_x |= (((newx + (newxrem == 0 ? 0 : 1)) * size) & 0xFFFF) << 16;
+		}//*/
 		if (a1_phrase_mode)			// v2
 		{
 			// Bump the pointer to the next phrase boundary
@@ -822,6 +995,26 @@ Blit! (000B8250 <- 0012C3A0) count: 16 x 1, A1/2_FLAGS: 00014420/00012000 [cmd: 
 			uint32_t pixelSize = (size - 1) << 16;
 			a1_x = (a1_x + pixelSize) & ~pixelSize;
 		}
+
+/*		if (a2_phrase_mode)			// v1
+		{
+			// Bump the pointer to the next phrase boundary
+			// Even though it works, this is crappy... Clean it up!
+			uint32_t size = 64 / a2_psize;
+
+			// Crappy kludge... ('aligning' source to destination)
+			// Prolly should do this for A1 channel as well... [DONE]
+			if (a1_phrase_mode && !DSTA2)
+			{
+				uint32_t extra = (a1_start >> 16) % size;
+				a2_x += extra << 16;
+			}
+
+			uint32_t newx = (a2_x >> 16) / size;
+			uint32_t newxrem = (a2_x >> 16) % size;
+			a2_x &= 0x0000FFFF;
+			a2_x |= (((newx + (newxrem == 0 ? 0 : 1)) * size) & 0xFFFF) << 16;
+		}//*/
 		if (a2_phrase_mode)			// v1
 		{
 			// Bump the pointer to the next phrase boundary
@@ -859,6 +1052,14 @@ Blit! (000B8250 <- 0012C3A0) count: 16 x 1, A1/2_FLAGS: 00014420/00012000 [cmd: 
 
 void blitter_blit(uint32_t cmd)
 {
+//Apparently this is doing *something*, just not sure exactly what...
+/*if (cmd == 0x41802E01)
+{
+	WriteLog("BLIT: Found our blit. Was: %08X ", cmd);
+	cmd = 0x01800E01;
+	WriteLog("Is: %08X\n", cmd);
+}//*/
+
 	uint32_t pitchValue[4] = { 0, 1, 3, 2 };
 	colour_index = 0;
 	src = cmd & 0x07;
@@ -890,13 +1091,30 @@ void blitter_blit(uint32_t cmd)
 
 	a1_x = (REG(A1_PIXEL) << 16) | (REG(A1_FPIXEL) & 0xFFFF);
 	a1_y = (REG(A1_PIXEL) & 0xFFFF0000) | (REG(A1_FPIXEL) >> 16);
+//According to the JTRM, X is restricted to 15 bits and Y is restricted to 12.
+//But it seems to fuck up T2K! !!! FIX !!!
+//Could it be sign extended??? Doesn't seem to be so according to JTRM
+//	a1_x &= 0x7FFFFFFF, a1_y &= 0x0FFFFFFF;
+//Actually, it says that the X is 16 bits. But it still seems to mess with the Y when restricted to 12...
+//	a1_y &= 0x0FFFFFFF;
 
+//	a1_width = blitter_scanline_width[((REG(A1_FLAGS) & 0x00007E00) >> 9)];
+// According to JTRM, this must give a *whole number* of phrases in the current
+// pixel size (this means the lookup above is WRONG)... !!! FIX !!!
 	uint32_t m = (REG(A1_FLAGS) >> 9) & 0x03, e = (REG(A1_FLAGS) >> 11) & 0x0F;
 	a1_width = ((0x04 | m) << e) >> 2;//*/
 
 	a2_x = (REG(A2_PIXEL) & 0x0000FFFF) << 16;
 	a2_y = (REG(A2_PIXEL) & 0xFFFF0000);
+//According to the JTRM, X is restricted to 15 bits and Y is restricted to 12.
+//But it seems to fuck up T2K! !!! FIX !!!
+//	a2_x &= 0x7FFFFFFF, a2_y &= 0x0FFFFFFF;
+//Actually, it says that the X is 16 bits. But it still seems to mess with the Y when restricted to 12...
+//	a2_y &= 0x0FFFFFFF;
 
+//	a2_width = blitter_scanline_width[((REG(A2_FLAGS) & 0x00007E00) >> 9)];
+// According to JTRM, this must give a *whole number* of phrases in the current
+// pixel size (this means the lookup above is WRONG)... !!! FIX !!!
 	m = (REG(A2_FLAGS) >> 9) & 0x03, e = (REG(A2_FLAGS) >> 11) & 0x0F;
 	a2_width = ((0x04 | m) << e) >> 2;//*/
 	a2_mask_x = ((REG(A2_MASK) & 0x0000FFFF) << 16) | 0xFFFF;
@@ -941,6 +1159,19 @@ void blitter_blit(uint32_t cmd)
 		break;
 	}
 
+
+//Blit! (0011D000 -> 000B9600) count: 228 x 1, A1/2_FLAGS: 00073820/00064220 [cmd: 41802801]
+//  A1 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 128 (1C), addctl: XADDINC YADD1 XSIGNADD YSIGNADD
+//  A2 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 320 (21), addctl: XADD0 YADD1 XSIGNADD YSIGNADD
+//if (YADD1_A1 && YADD1_A2 && xadd_a2_control == XADD0 && xadd_a1_control == XADDINC)// &&
+//	uint32_t a1f = REG(A1_FLAGS), a2f = REG(A2_FLAGS);
+//Ok, so this ISN'T it... Prolly the XADDPHR code above that's doing it...
+//if (REG(A1_FLAGS) == 0x00073820 && REG(A2_FLAGS) == 0x00064220 && cmd == 0x41802801)
+//        A1 x/y: 14368/7, A2 x/y: 150/36
+//This is it... The problem...
+//if ((a1_x >> 16) == 14368) // 14368 = $3820
+//	return; //Lesse what we got...
+
 	if (XSIGNSUB_A1)
 		a1_xadd = -a1_xadd;
 
@@ -964,6 +1195,13 @@ void blitter_blit(uint32_t cmd)
 	case XADD0:
 		// add zero (for those nice vertical lines)
 		a2_xadd = 0;
+		break;
+//This really isn't a valid bit combo for A2... Shouldn't this cause the blitter to just say no?
+	case XADDINC:
+		// add the contents of the increment register
+		// since there is no register for a2 we just add 1
+//Let's do nothing, since it's not listed as a valid bit combo...
+//		a2_xadd = 1 << 16;
 		break;
 	}
 
@@ -1041,8 +1279,189 @@ void blitter_blit(uint32_t cmd)
 			gd_ca = 0xFFFFFF00 | gd_ca;
 	}
 
+	// Bit comparitor fixing...
+/*	if (BCOMPEN)
+	{
+		// Determine the data flow direction...
+		if (!DSTA2)
+			a2_step_x /= (1 << ((REG(A2_FLAGS) >> 3) & 0x07));
+		else
+			;//add this later
+	}//*/
+/*	if (BCOMPEN)//Kludge for Hover Strike... !!! FIX !!!
+	{
+		// Determine the data flow direction...
+		if (!DSTA2)
+			a2_x <<= 3;
+	}//*/
+/*
+#ifdef LOG_BLITS
+	if (start_logging)
+	{
+		WriteLog("Blit!\n");
+		WriteLog("  cmd      = 0x%.8x\n",cmd);
+		WriteLog("  a1_base  = %08X\n", a1_addr);
+		WriteLog("  a1_pitch = %d\n", a1_pitch);
+		WriteLog("  a1_psize = %d\n", a1_psize);
+		WriteLog("  a1_width = %d\n", a1_width);
+		WriteLog("  a1_xadd  = %f (phrase=%d)\n", (float)a1_xadd / 65536.0, a1_phrase_mode);
+		WriteLog("  a1_yadd  = %f\n", (float)a1_yadd / 65536.0);
+		WriteLog("  a1_xstep = %f\n", (float)a1_step_x / 65536.0);
+		WriteLog("  a1_ystep = %f\n", (float)a1_step_y / 65536.0);
+		WriteLog("  a1_x     = %f\n", (float)a1_x / 65536.0);
+		WriteLog("  a1_y     = %f\n", (float)a1_y / 65536.0);
+		WriteLog("  a1_zoffs = %i\n",a1_zoffs);
+
+		WriteLog("  a2_base  = %08X\n", a2_addr);
+		WriteLog("  a2_pitch = %d\n", a2_pitch);
+		WriteLog("  a2_psize = %d\n", a2_psize);
+		WriteLog("  a2_width = %d\n", a2_width);
+		WriteLog("  a2_xadd  = %f (phrase=%d)\n", (float)a2_xadd / 65536.0, a2_phrase_mode);
+		WriteLog("  a2_yadd  = %f\n", (float)a2_yadd / 65536.0);
+		WriteLog("  a2_xstep = %f\n", (float)a2_step_x / 65536.0);
+		WriteLog("  a2_ystep = %f\n", (float)a2_step_y / 65536.0);
+		WriteLog("  a2_x     = %f\n", (float)a2_x / 65536.0);
+		WriteLog("  a2_y     = %f\n", (float)a2_y / 65536.0);
+		WriteLog("  a2_mask_x= 0x%.4x\n",a2_mask_x);
+		WriteLog("  a2_mask_y= 0x%.4x\n",a2_mask_y);
+		WriteLog("  a2_zoffs = %i\n",a2_zoffs);
+
+		WriteLog("  count    = %d x %d\n", n_pixels, n_lines);
+
+		WriteLog("  command  = %08X\n", cmd);
+		WriteLog("  dsten    = %i\n",DSTEN);
+		WriteLog("  srcen    = %i\n",SRCEN);
+		WriteLog("  patdsel  = %i\n",PATDSEL);
+		WriteLog("  color    = 0x%.8x\n",REG(PATTERNDATA));
+		WriteLog("  dcompen  = %i\n",DCOMPEN);
+		WriteLog("  bcompen  = %i\n",BCOMPEN);
+		WriteLog("  cmpdst   = %i\n",CMPDST);
+		WriteLog("  GOURZ   = %i\n",GOURZ);
+		WriteLog("  GOURD   = %i\n",GOURD);
+		WriteLog("  SRCSHADE= %i\n",SRCSHADE);
+	}
+#endif
+*/
+//NOTE: Pitch is ignored!
+
+//This *might* be the altimeter blits (they are)...
+//On captured screen, x-pos for black (inner) is 259, for pink is 257
+//Black is short by 3, pink is short by 1...
+/*
+Blit! (00110000 <- 000BF010) count: 9 x 31, A1/2_FLAGS: 000042E2/00010020 [cmd: 00010200]
+ CMD -> src:  dst:  misc:  a1ctl: UPDA1  mode:  ity: PATDSEL z-op:  op: LFU_CLEAR ctrl:
+  A1 -> pitch: 4 phrases, depth: 16bpp, z-off: 3, width: 320 (21), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+  A2 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 1 (00), addctl: XADDPIX YADD0 XSIGNADD YSIGNADD
+        A1 x/y: 262/124, A2 x/y: 128/0
+Blit! (00110000 <- 000BF010) count: 5 x 38, A1/2_FLAGS: 000042E2/00010020 [cmd: 00010200]
+ CMD -> src:  dst:  misc:  a1ctl: UPDA1  mode:  ity: PATDSEL z-op:  op: LFU_CLEAR ctrl:
+  A1 -> pitch: 4 phrases, depth: 16bpp, z-off: 3, width: 320 (21), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+  A2 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 1 (00), addctl: XADDPIX YADD0 XSIGNADD YSIGNADD
+        A1 x/y: 264/117, A2 x/y: 407/0
+
+Blit! (00110000 <- 000BF010) count: 9 x 23, A1/2_FLAGS: 000042E2/00010020 [cmd: 00010200]
+ CMD -> src:  dst:  misc:  a1ctl: UPDA1  mode:  ity: PATDSEL z-op:  op: LFU_CLEAR ctrl:
+  A1 step values: -10 (X), 1 (Y)
+  A1 -> pitch: 4(2) phrases, depth: 16bpp, z-off: 3, width: 320 (21), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+  A2 -> pitch: 1(0) phrases, depth: 16bpp, z-off: 0, width: 1 (00), addctl: XADDPIX YADD0 XSIGNADD YSIGNADD
+        A1 x/y: 262/132, A2 x/y: 129/0
+Blit! (00110000 <- 000BF010) count: 5 x 27, A1/2_FLAGS: 000042E2/00010020 [cmd: 00010200]
+ CMD -> src:  dst:  misc:  a1ctl: UPDA1  mode:  ity: PATDSEL z-op:  op: LFU_CLEAR ctrl:
+  A1 step values: -8 (X), 1 (Y)
+  A1 -> pitch: 4(2) phrases, depth: 16bpp, z-off: 3, width: 320 (21), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+  A2 -> pitch: 1(0) phrases, depth: 16bpp, z-off: 0, width: 1 (00), addctl: XADDPIX YADD0 XSIGNADD YSIGNADD
+        A1 x/y: 264/128, A2 x/y: 336/0
+
+  264v       vCursor ends up here...
+     xxxxx...`
+     111122223333
+
+262v         vCursor ends up here...
+   xxxxxxxxx.'
+ 1111222233334444
+
+Fixed! Now for more:
+
+; This looks like the ship icon in the upper left corner...
+
+Blit! (00110000 <- 0010B2A8) count: 11 x 12, A1/2_FLAGS: 000042E2/00000020 [cmd: 09800609]
+ CMD -> src: SRCEN  dst: DSTEN  misc:  a1ctl: UPDA1 UPDA2 mode:  ity:  z-op:  op: LFU_REPLACE ctrl: DCOMPEN
+  A1 step values: -12 (X), 1 (Y)
+  A2 step values: 0 (X), 0 (Y) [mask (unused): 00000000 - FFFFFFFF/FFFFFFFF]
+  A1 -> pitch: 4 phrases, depth: 16bpp, z-off: 3, width: 320 (21), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+  A2 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 1 (00), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+        A1 x/y: 20/24, A2 x/y: 5780/0
+
+Also fixed!
+
+More (not sure this is a blitter problem as much as it's a GPU problem):
+All but the "M" are trashed...
+This does *NOT* look like a blitter problem, as it's rendering properly...
+Actually, if you look at the A1 step values, there IS a discrepancy!
+
+; D
+
+Blit! (00110000 <- 0010B2A8) count: 12 x 12, A1/2_FLAGS: 000042E2/00000020 [cmd: 09800609]
+ CMD -> src: SRCEN  dst: DSTEN  misc:  a1ctl: UPDA1 UPDA2 mode:  ity:  z-op:  op: LFU_REPLACE ctrl: DCOMPEN
+  A1 step values: -14 (X), 1 (Y)
+  A2 step values: -4 (X), 0 (Y) [mask (unused): 00000000 - FFFFFFFF/FFFFFFFF]
+  A1 -> pitch: 4 phrases, depth: 16bpp, z-off: 3, width: 320 (21), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+  A2 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 1 (00), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+        A1 x/y: 134/144, A2 x/y: 2516/0
+;129,146: +5,-2
+
+; E
+
+Blit! (00110000 <- 0010B2A8) count: 12 x 12, A1/2_FLAGS: 000042E2/00000020 [cmd: 09800609]
+ CMD -> src: SRCEN  dst: DSTEN  misc:  a1ctl: UPDA1 UPDA2 mode:  ity:  z-op:  op: LFU_REPLACE ctrl: DCOMPEN
+  A1 step values: -13 (X), 1 (Y)
+  A2 step values: -4 (X), 0 (Y) [mask (unused): 00000000 - FFFFFFFF/FFFFFFFF]
+  A1 -> pitch: 4 phrases, depth: 16bpp, z-off: 3, width: 320 (21), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+  A2 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 1 (00), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+        A1 x/y: 147/144, A2 x/y: 2660/0
+
+; M
+
+Blit! (00110000 <- 0010B2A8) count: 12 x 12, A1/2_FLAGS: 000042E2/00000020 [cmd: 09800609]
+ CMD -> src: SRCEN  dst: DSTEN  misc:  a1ctl: UPDA1 UPDA2 mode:  ity:  z-op:  op: LFU_REPLACE ctrl: DCOMPEN
+  A1 step values: -12 (X), 1 (Y)
+  A2 step values: 0 (X), 0 (Y) [mask (unused): 00000000 - FFFFFFFF/FFFFFFFF]
+  A1 -> pitch: 4 phrases, depth: 16bpp, z-off: 3, width: 320 (21), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+  A2 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 1 (00), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+        A1 x/y: 160/144, A2 x/y: 3764/0
+
+; O
+
+Blit! (00110000 <- 0010B2A8) count: 12 x 12, A1/2_FLAGS: 000042E2/00000020 [cmd: 09800609]
+ CMD -> src: SRCEN  dst: DSTEN  misc:  a1ctl: UPDA1 UPDA2 mode:  ity:  z-op:  op: LFU_REPLACE ctrl: DCOMPEN
+  A1 step values: -15 (X), 1 (Y)
+  A2 step values: -4 (X), 0 (Y) [mask (unused): 00000000 - FFFFFFFF/FFFFFFFF]
+  A1 -> pitch: 4 phrases, depth: 16bpp, z-off: 3, width: 320 (21), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+  A2 -> pitch: 1 phrases, depth: 16bpp, z-off: 0, width: 1 (00), addctl: XADDPHR YADD0 XSIGNADD YSIGNADD
+        A1 x/y: 173/144, A2 x/y: 4052/0
+
+*/
+//extern int op_start_log;
+
 	blitter_working = 1;
+//#ifndef USE_GENERIC_BLITTER
+//	if (!blitter_execute_cached_code(blitter_in_cache(cmd)))
+//#endif
 	blitter_generic(cmd);
+
+/*if (blit_start_log)
+{
+	if (a1_addr == 0xF03000 && a2_addr == 0x004D58)
+	{
+		WriteLog("\nBytes at 004D58:\n");
+		for(int i=0x004D58; i<0x004D58+(10*127*4); i++)
+			WriteLog("%02X ", JaguarReadByte(i));
+		WriteLog("\nBytes at F03000:\n");
+		for(int i=0xF03000; i<0xF03000+(6*127*4); i++)
+			WriteLog("%02X ", JaguarReadByte(i));
+		WriteLog("\n\n");
+	}
+}//*/
 
 	blitter_working = 0;
 }
@@ -1060,7 +1479,6 @@ void blitter_reset(void)
 
 void blitter_done(void)
 {
-	WriteLog("BLIT: Done.\n");
 }
 
 uint8 BlitterReadByte(uint32 offset, uint32 who/*=UNKNOWN*/)
@@ -1156,22 +1574,56 @@ void BlitterWriteByte(uint32 offset, uint8 data, uint32 who/*=UNKNOWN*/)
 
 void BlitterWriteWord(uint32 offset, uint16 data, uint32 who/*=UNKNOWN*/)
 {
+//#if 1
+/*	if (offset & 0xFF == A1_PIXEL && data == 14368)
+	{
+		WriteLog("\n1\nA1_PIXEL written by %s (%u)...\n\n\n", whoName[who], data);
+extern bool doGPUDis;
+doGPUDis = true;
+	}
+	if ((offset & 0xFF) == (A1_PIXEL + 2) && data == 14368)
+	{
+		WriteLog("\n2\nA1_PIXEL written by %s (%u)...\n\n\n", whoName[who], data);
+extern bool doGPUDis;
+doGPUDis = true;
+	}//*/
+//#endif
+
 	BlitterWriteByte(offset+0, (data>>8) & 0xFF, who);
 	BlitterWriteByte(offset+1, data & 0xFF, who);
 
 	if ((offset & 0xFF) == 0x3A)
-	{
+	// I.e., the second write of 32-bit value--not convinced this is the best way to do this!
+	// But then again, according to the Jaguar docs, this is correct...!
+{
+/*extern int blit_start_log;
+extern bool doGPUDis;
+if (blit_start_log)
+{
+	WriteLog("BLIT: Blitter started by %s...\n", whoName[who]);
+	doGPUDis = true;
+}//*/
 		blitter_blit(GET32(blitter_ram, 0x38));
-	}
+}
 }
 //F02278,9,A,B
 
 void BlitterWriteLong(uint32 offset, uint32 data, uint32 who/*=UNKNOWN*/)
 {
+//#if 1
+/*	if ((offset & 0xFF) == A1_PIXEL && (data & 0xFFFF) == 14368)
+	{
+		WriteLog("\n3\nA1_PIXEL written by %s (%u)...\n\n\n", whoName[who], data);
+extern bool doGPUDis;
+doGPUDis = true;
+	}//*/
+//#endif
+
 	BlitterWriteWord(offset, data >> 16, who);
 	BlitterWriteWord(offset+2, data & 0xFFFF, who);
 }
 
 void LogBlit(void)
 {
+
 }

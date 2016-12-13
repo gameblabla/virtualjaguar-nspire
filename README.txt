@@ -1,6 +1,7 @@
 ==========================
 Virtual Jaguar SDL Nspire
 ==========================
+Version 1.1
 Port by gameblabla with some upstream backported code.
 
 MAKE SURE YOU ARE RUNNING NDLESS LATEST VERSION
@@ -25,3 +26,11 @@ TAB = Pause
 Enter = Option
 Numpad = Jag Numpad
 
+
+=============
+CHANGELOG
+=============
+
+Version 1.1
+Based on my GCW0 modifications.
+Better speed and smaller file size.

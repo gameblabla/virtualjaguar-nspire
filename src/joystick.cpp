@@ -40,11 +40,14 @@
 static uint8 joystick_ram[4];
 static uint8 joypad_0_buttons[21];
 extern bool finished;
+extern bool showGUI;
 bool GUIKeyHeld = false;
 bool interactiveMode = false;
 bool iLeft, iRight, iToggle = false;
 bool keyHeld1 = false, keyHeld2 = false, keyHeld3 = false;
 int objectPtr = 0;
+bool startMemLog = false;
+extern bool doDSPDis;
 
 
 void joystick_init(void)
@@ -59,6 +62,9 @@ void joystick_exec(void)
   	
 	memset(joypad_0_buttons, 0, 21);
 	iLeft = iRight = false;
+
+	// Keybindings in order of U, D, L, R, C, B, A, Op, Pa, 0-9, #, *
+//	vjs.p1KeyBindings[0] = sdlemu_getval_int("p1k_up", SDLK_UP);
 
 	if (keystate[vjs.p1KeyBindings[0]])
 		joypad_0_buttons[BUTTON_U] = 0x01;
@@ -112,11 +118,7 @@ void joystick_exec(void)
 		VersionDone();
 		MemoryDone();
 		VideoDone();
-		log_done();	
-
-		// Free SDL components last...!
-		//SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_AUDIO | SDL_INIT_TIMER | SDL_INIT_CDROM);
-		SDL_QuitSubSystem(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_AUDIO | SDL_INIT_TIMER);
+		SDL_QuitSubSystem(SDL_INIT_VIDEO);
 		SDL_Quit();
 		exit(0);
     }
@@ -144,7 +146,6 @@ uint8 joystick_byte_read(uint32 offset)
 	{
 		uint8 data = 0x00;
 		int pad0Index = joystick_ram[1] & 0x0F;
-		int pad1Index = (joystick_ram[1] >> 4) & 0x0F;
 		
 // This is bad--we're assuming that a bit is set in the last case. Might not be so!
 		if (!(pad0Index & 0x01)) 
@@ -155,15 +156,6 @@ uint8 joystick_byte_read(uint32 offset)
 			pad0Index = 2;
 		else 
 			pad0Index = 3;
-		
-		if (!(pad1Index & 0x01)) 
-			pad1Index = 0;
-		else if (!(pad1Index & 0x02)) 
-			pad1Index = 1;
-		else if (!(pad1Index & 0x04)) 
-			pad1Index = 2;
-		else
-			pad1Index = 3;
 
 		if (joypad_0_buttons[(pad0Index << 2) + 0])	data |= 0x01;
 		if (joypad_0_buttons[(pad0Index << 2) + 1]) data |= 0x02;
@@ -176,7 +168,6 @@ uint8 joystick_byte_read(uint32 offset)
 	{
 		uint8 data = 0x2F | (vjs.hardwareTypeNTSC ? 0x10 : 0x00);
 		int pad0Index = joystick_ram[1] & 0x0F;
-//unused		int pad1Index = (joystick_ram[1] >> 4) & 0x0F;
 		
 		if (!(pad0Index & 0x01))
 		{

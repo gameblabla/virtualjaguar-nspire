@@ -11,7 +11,7 @@ LD         = nspire-gcc
 TARGET     = vj.elf
 
 # Note that we use optimization level 2 instead of 3--3 doesn't seem to gain much over 2
-CFLAGS = -Ofast -fdata-sections -ffunction-sections -marm -march=armv5te -mtune=arm926ej-s -D__GCCUNIX__ 
+CFLAGS = -Ofast -fdata-sections -ffunction-sections -marm -march=armv5te -mtune=arm926ej-s -D__GCCUNIX__ -DDSP_EMU
 LDFLAGS = -Wl,--as-needed -Wl,--gc-sections -flto
 
 LIBS = -lSDL $(GLLIB)
@@ -26,6 +26,7 @@ OBJS = \
 	obj/clock.o \
 	obj/crc32.o \
 	obj/dac.o \
+	obj/dsp.o \
 	obj/eeprom.o \
 	obj/gpu.o \
 	obj/gui.o \

@@ -3,15 +3,14 @@
 //
 // by James L. Hammons
 //
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <cstring>
 #include "SDL.h"
 #include "sdlemu_config.h"
-#include "log.h"
 #include "settings.h"
-
 
 // Global variables
 
@@ -26,29 +25,38 @@ void CheckForTrailingSlash(char * path);
 //
 void LoadVJSettings(void)
 {
+	/*if (sdlemu_init_config("./vj.cfg") == 0			// CWD
+		&& sdlemu_init_config("~/vj.cfg") == 0		// Home
+		&& sdlemu_init_config("~/.vj/vj.cfg") == 0	// Home under .vj directory
+		&& sdlemu_init_config("vj.cfg") == 0)		// Somewhere in the path
+		WriteLog("Settings: Couldn't find VJ configuration file. Using defaults...\n");
+	*/
 	vjs.useJoystick = false;
 	vjs.joyport = 0;
 	vjs.hardwareTypeNTSC = true;
 	vjs.useJaguarBIOS = false;
+	#ifdef DSP_EMU
 	vjs.DSPEnabled = true;
+	#else
+	vjs.DSPEnabled = false;
+	#endif
 	vjs.usePipelinedDSP = false;
 	vjs.fullscreen = false;
 	vjs.useOpenGL = 0;
 	vjs.glFilter = 0;
 
-	// Keybindings in order of U, D, L, R, C, B, A, Op, Pa, 0-9, #, *
 	vjs.p1KeyBindings[0] = SDLK_UP;
 	vjs.p1KeyBindings[1] = SDLK_DOWN;
 	vjs.p1KeyBindings[2] = SDLK_LEFT;
 	vjs.p1KeyBindings[3] = SDLK_RIGHT;
 	vjs.p1KeyBindings[4] = SDLK_LCTRL;
-	vjs.p1KeyBindings[5] = SDLK_LSHIFT;
-	vjs.p1KeyBindings[6] = SDLK_BACKSPACE;
-	vjs.p1KeyBindings[7] = SDLK_TAB;
+	vjs.p1KeyBindings[5] = SDLK_LALT;
+	vjs.p1KeyBindings[6] = SDLK_LSHIFT;
+	vjs.p1KeyBindings[7] = SDLK_ESCAPE;
 	vjs.p1KeyBindings[8] = SDLK_RETURN;
-	vjs.p1KeyBindings[9] =  SDLK_0;
-	vjs.p1KeyBindings[10] = SDLK_1;
-	vjs.p1KeyBindings[11] = SDLK_2;
+	vjs.p1KeyBindings[9] =  SDLK_SPACE;
+	vjs.p1KeyBindings[10] = SDLK_TAB;
+	vjs.p1KeyBindings[11] = SDLK_BACKSPACE;
 	vjs.p1KeyBindings[12] = SDLK_3;
 	vjs.p1KeyBindings[13] = SDLK_4;
 	vjs.p1KeyBindings[14] = SDLK_5;
