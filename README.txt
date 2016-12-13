@@ -3,6 +3,9 @@ Virtual Jaguar SDL Nspire
 ==========================
 Port by gameblabla with some upstream backported code.
 
+MAKE SURE YOU ARE RUNNING NDLESS LATEST VERSION
+OR ELSE IT WON'T WORK DUE TO STACK ISSUES !
+
 Here's a port of Virtual Jaguar for the TI Nspire CX.
 You better overclock your calc if you want to have decent emulation
 speed on this thing !
